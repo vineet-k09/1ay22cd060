@@ -2,7 +2,6 @@
 **Note: All the .env files are pushed to remote only for evaluation purposes.**
 
 ## Logs
-
-## Frontend
+Logs module stored in Logginmiddleware/logs.ts
 
 ## Backend

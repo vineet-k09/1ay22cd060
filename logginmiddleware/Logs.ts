@@ -33,7 +33,7 @@ export default async function Log(
     });
 
     console.log("Log Success:", response.data);
-  } catch (error) {
-    console.error("Log Failed:", error.response?.data || error.message);
+  } catch (error: any) {
+    console.error("Log Failed:", error.message? error.message: "");
   }
 }

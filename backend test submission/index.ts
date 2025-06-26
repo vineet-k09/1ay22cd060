@@ -1,4 +1,6 @@
+// backend test submission/index.ts
 import Log from '../logginmiddleware/Logs';
+import { Request, Response } from 'express';
 
 import dotenv from 'dotenv';
 dotenv.config();
@@ -12,7 +14,7 @@ const app = express();
 app.use(express.json());
 
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 8080;
 const directoryPath = path.join(__dirname, 'stored', 'directory.json');
 
 // stores shortCodes to prevent excessive file read
@@ -21,13 +23,16 @@ function ifExist(shortCode: string): boolean {
     return existingShortCodes.includes(shortCode);
 }
 
+//for generating short codes - randomly
 function generateRandomCode(): string {
-    return crypto.randomBytes(4).toString('hex'); //for generating short codes
+    return crypto.randomBytes(4).toString('hex'); 
 }
 
+
+// making short urls logic
 function getShortCode(url: string, validity: string, shortCode: string): [string, string] {
     let allData: any[] = [];
-    // to store all data by push()
+    // to store all data(existing + new) by push()
 
     try {
         allData = JSON.parse(fs.readFileSync(directoryPath, 'utf-8'));
@@ -55,14 +60,13 @@ function getShortCode(url: string, validity: string, shortCode: string): [string
             existingShortCodes.push(shortCode);
             Log("backend", "info", "generate", `Created custom shortCode ${shortCode}`);
         } else {
-
             Log("backend", "warn", "generate", `shortCode ${shortCode} already exists, generating new`);
             return getShortCode(url, validity, 'NA');
         }
     } else {
         const newShortCode = generateRandomCode();
         // creates a random code in case user doesn't specify a unique code
-        
+
         if (!ifExist(newShortCode)) {
             shortLink = `http://localhost:${PORT}/${newShortCode}`;
             allData.push({
@@ -72,7 +76,10 @@ function getShortCode(url: string, validity: string, shortCode: string): [string
                 shortLink,
                 expiry: expiryDate.toISOString()
             });
+
             fs.writeFileSync(directoryPath, JSON.stringify(allData), 'utf-8');
+            // JSON needs to be converted into string to write.
+
             existingShortCodes.push(newShortCode);
             Log("backend", "info", "generate", `Generated random shortCode ${newShortCode}`);
         }
@@ -86,47 +93,48 @@ app.post('/shorturls', (req, res) => {
     try {
         const { url, validity = "30", shortCode = "NA" } = req.body;
         const [shortLink, expiry] = getShortCode(url, validity, shortCode);
+
         Log("backend", "info", "route", `Shortened URL: ${shortLink} (expires ${expiry})`);
         res.status(201).json({ shortLink, expiry });
+
     } catch (err: any) {
-        Log("backend", "error", "route", `Request error: ${err.message}`);
-        res.status(500).send(`Request Error: ${err.message}`);
+        Log("backend", "error", "route", `Request error: ${err.message?err.message:""}`);
+        res.status(500).send(`Request Error: ${err.message?err.message:""}`);
     }
 });
 
 // Redirect logic
-app.get('/:shortCode', (req, res) => {
-    const shortCodeUrl = req.params.shortCode;
-    try {
-        const allData = JSON.parse(fs.readFileSync(directoryPath, 'utf-8'));
-        const match = allData.find((item: any) => item.shortCode === shortCodeUrl);
-
-        if (!match) {
-            Log("backend", "warn", "redirect", `No URL found for shortCode: ${shortCodeUrl}`);
-            return res.status(404).send('Short URL not found');
+existingShortCodes.forEach(shortCodeUrl => {
+    app.get(`/${shortCodeUrl}`, (req, res) => {
+        try {
+            const allData = JSON.parse(fs.readFileSync(directoryPath, 'utf-8'));
+            const match = allData.find((item: any) => item.shortCode === shortCodeUrl);
+    
+            if (!match) {
+                Log("backend", "warn", "route", `No URL found for shortCode: ${shortCodeUrl}`);
+                res.send('Short URL not found');
+            }
+    
+            const isExpired = new Date(match.expiry) < new Date();
+            // log expiry of urls
+            if (isExpired) {
+                Log("backend", "warn", "route", `Short URL ${shortCodeUrl} has expired`);
+                res.send('Link expired');
+            }
+    
+            Log("backend", "info", "route", `Redirecting to ${match.url}`);
+            res.redirect(match.url);
+        } catch (err: any) {
+    
+            Log("backend", "error", "route", `Redirection error: ${err.message?err.message:""}`);
+            res.status(500).send(`Error: ${err.message?err.message:""}`);
         }
+    });
+})
 
-        const isExpired = new Date(match.expiry) < new Date();
-        if (isExpired) {
-            Log("backend", "warn", "redirect", `Short URL ${shortCodeUrl} has expired`);
-            return res.status(410).send('Link expired');
-        }
-
-        Log("backend", "info", "redirect", `Redirecting to ${match.url}`);
-        return res.redirect(match.url);
-    } catch (err: any) {
-        Log("backend", "error", "redirect", `Redirection error: ${err.message}`);
-        res.status(500).send(`Error: ${err.message}`);
-    }
-});
 
 // Start server
-app.listen(PORT, (err?: Error) => {
-    if (err) {
-        Log("backend", "fatal", "server", `Error starting server: ${err.message}`);
-        console.error(err);
-    } else {
-        Log("backend", "info", "server", `Server running at http://localhost:${PORT}/`);
+app.listen(PORT, () => {
+        Log("backend", "info", "route", `Server running at http://localhost:${PORT}/`);
         console.log(`Listening to: http://localhost:${PORT}/`);
-    }
 });
